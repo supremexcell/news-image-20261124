@@ -1,0 +1,74 @@
+// News image 24 Nov 2026 — the entry program (Node 22, standard library only).
+//
+// What it does: it takes entry.png from beside this file — a one-page
+// summary of the world's news of Tuesday 24 November 2026, drawn for this
+// entry — and writes it to /output/entry.png. Nothing else is read,
+// nothing else is written, and the program runs the same way twice: the
+// bytes it writes are always the bytes of entry.png.
+//
+// Safety: before copying, it checks that entry.png really is a 1024x1024
+// PNG (magic bytes + IHDR dimensions) and that its sha256 is exactly the
+// hash of the approved image. After copying, it reads the output back and
+// checks the hash again, so a truncated or altered copy can never reach
+// the judge.
+//
+// Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
+//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// sha256 of entry.png as built and approved, 24 Nov 2026.
+const APPROVED_SHA256 =
+  '3ec9ac8fdd2df2879f258f372a5811ffd85512237fa9a31e23726b4f358e8298';
+
+const PNG_MAGIC = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
+
+function hashOf(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+function loadApprovedImage(): Buffer {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const bytes = readFileSync(join(here, 'entry.png'));
+
+  if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG_MAGIC)) {
+    throw new Error('entry.png is not a PNG file');
+  }
+  // The first chunk of a real PNG must be IHDR (bytes 12-16); a file with
+  // the right magic but a different first chunk is not a PNG we trust.
+  if (bytes.subarray(12, 16).toString('ascii') !== 'IHDR') {
+    throw new Error('entry.png has no IHDR chunk where one belongs');
+  }
+  const width = bytes.readUInt32BE(16);
+  const height = bytes.readUInt32BE(20);
+  if (width !== 1024 || height !== 1024) {
+    throw new Error(`entry.png is ${width}x${height}, expected 1024x1024`);
+  }
+  if (hashOf(bytes) !== APPROVED_SHA256) {
+    throw new Error(
+      `entry.png sha256 mismatch: got ${hashOf(bytes)}, expected ${APPROVED_SHA256}`,
+    );
+  }
+  return bytes;
+}
+
+function main(): void {
+  const bytes = loadApprovedImage();
+
+  const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+  mkdirSync(outDir, { recursive: true });
+  const target = join(outDir, 'entry.png');
+  writeFileSync(target, bytes);
+
+  const writtenBack = readFileSync(target);
+  if (hashOf(writtenBack) !== APPROVED_SHA256) {
+    throw new Error('the copied /output/entry.png failed its sha256 check');
+  }
+}
+
+main();
