@@ -49,6 +49,15 @@ function loadApprovedImage(): Buffer {
   if (width !== 1024 || height !== 1024) {
     throw new Error(`entry.png is ${width}x${height}, expected 1024x1024`);
   }
+  // A PNG must end with the 12-byte IEND chunk (zero length, 'IEND',
+  // CRC ae426082). A file cut short mid-download fails here even before
+  // the hash is consulted, so a truncated image is caught twice.
+  const IEND_TRAILER = Buffer.from([
+    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+  ]);
+  if (bytes.length < 12 || !bytes.subarray(bytes.length - 12).equals(IEND_TRAILER)) {
+    throw new Error('entry.png has no IEND trailer where one belongs');
+  }
   if (hashOf(bytes) !== APPROVED_SHA256) {
     throw new Error(
       `entry.png sha256 mismatch: got ${hashOf(bytes)}, expected ${APPROVED_SHA256}`,
